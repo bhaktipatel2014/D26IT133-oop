@@ -5,7 +5,6 @@ class Counter {
         count++;
     }
 }
-
 class CounterThread extends Thread {
     Counter counter;
     int times;
