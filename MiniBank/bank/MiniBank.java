@@ -1,78 +1,67 @@
 package bank;
 
-import java.util.Scanner;
+public class Customer implements Cloneable {
+    private String name;
+    private Address address;
 
-public class MiniBank {
-
-    record BankInfo(String name, String branch) {
+    public Customer(String name, Address address) {
+        this.name = name;
+        this.address = address;
     }
 
-    enum MenuOption {
-        OPEN_ACCOUNT,
-        DEPOSIT,
-        WITHDRAW,
-        TRANSFER,
-        EXIT
+    public String getName() {
+        return name;
     }
 
-    public static void main(String[] args) {
+    public Address getAddress() {
+        return address;
+    }
 
-        Scanner sc = new Scanner(System.in);
+    // Static nested class for Address
+    public static class Address implements Cloneable {
+        private String line;
+        private String city;
+        private String pincode;
 
-        BankInfo bank = new BankInfo("MiniBank", "CHARUSAT");
-
-        System.out.println("----- " + bank.name() + " -----");
-        System.out.println("Branch: " + bank.branch());
-
-        Account[] accounts = new Account[3];
-
-        accounts[0] = new Account("Dhruva", 5000);
-        accounts[1] = new Account("Bhakti");
-        accounts[2] = new Account("John", 3000);
-
-        accounts[0].deposit(1000);
-        accounts[1].deposit(2000);
-
-        accounts[0].withdraw(2000);
-        accounts[1].withdraw(500);
-        accounts[2].withdraw(4000);
-
-        System.out.println("\nAccount Details:");
-
-        for (Account account : accounts) {
-            System.out.println("Account Number: " + account.getAccountNumber());
-            System.out.println("Owner: " + account.getOwnerName());
-            System.out.println("Balance: " + account.getBalance());
-            System.out.println();
+        public Address(String line, String city, String pincode) {
+            this.line = line;
+            this.city = city;
+            this.pincode = pincode;
         }
 
-        int choice;
+        public String getLine() {
+            return line;
+        }
 
-        do {
-            System.out.println("1. Open Account");
-            System.out.println("2. Deposit");
-            System.out.println("3. Withdraw");
-            System.out.println("4. Transfer");
-            System.out.println("5. Exit");
-            System.out.print("Enter your choice: ");
+        public String getCity() {
+            return city;
+        }
 
-            choice = sc.nextInt();
+        public String getPincode() {
+            return pincode;
+        }
 
-            String result = switch (choice) {
-                case 1 -> "Open Account - to be implemented in a later lab";
-                case 2 -> "Deposit - to be implemented in a later lab";
-                case 3 -> "Withdraw - to be implemented in a later lab";
-                case 4 -> "Transfer - to be implemented in a later lab";
-                case 5 -> "Exiting MiniBank...";
-                default -> "Invalid choice";
-            };
+        @Override
+        public Address clone() {
+            try {
+                return (Address) super.clone();
+            } catch (CloneNotSupportedException e) {
+                return new Address(this.line, this.city, this.pincode);
+            }
+        }
+    }
 
-            System.out.println(result);
-
-        } while (choice != 5);
-
-        System.out.println("Thank you for using MiniBank.");
-
-        sc.close();
+    @Override
+    public Customer clone() {
+        try {
+            Customer cloned = (Customer) super.clone();
+            // Perform deep clone for mutable reference objects
+            if (this.address != null) {
+                cloned.address = this.address.clone();
+            }
+            return cloned;
+        } catch (CloneNotSupportedException e) {
+            return new Customer(this.name, this.address != null ? this.address.clone() : null);
+        }
     }
 }
