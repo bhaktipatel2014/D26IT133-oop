@@ -3,6 +3,7 @@ package service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
+import java.util.concurrent.CountDownLatch;
 import exception.AccountNotFoundException;
 import exception.BankException;
 import exception.InsufficientFundsException;
@@ -28,7 +29,7 @@ public class MiniBank {
     }
 
     private enum MenuOption {
-        OPEN_ACCOUNT, DEPOSIT, WITHDRAW, TRANSFER, LIST_ACCOUNTS, STATEMENT, CONCURRENCY_DEMO, EXIT
+        OPEN_ACCOUNT, DEPOSIT, WITHDRAW, TRANSFER, LIST_ACCOUNTS, STATEMENT, CONCURRENCY_DEMO, TRANSACTION_PROCESSING_DEMO, EXIT
     }
 
     public static void main(String[] args) {
@@ -44,7 +45,7 @@ public class MiniBank {
         String[] validErrors = AnnotationValidator.validate(accounts.get(0));
 
         System.out.println("========================================");
-        System.out.println("Practical 7: Annotation Validation");
+        System.out.println("Account Validation");
         System.out.println("========================================");
         System.out.println("Invalid account: " + invalidAccount);
         System.out.println("Validation errors:");
@@ -78,12 +79,13 @@ public class MiniBank {
                 case 5 -> MenuOption.LIST_ACCOUNTS;
                 case 6 -> MenuOption.STATEMENT;
                 case 7 -> MenuOption.CONCURRENCY_DEMO;
-                case 8 -> MenuOption.EXIT;
+                case 8 -> MenuOption.TRANSACTION_PROCESSING_DEMO;
+                case 9 -> MenuOption.EXIT;
                 default -> null;
             };
 
             if (option == null) {
-                System.out.println("Invalid choice. Enter a number from 1 to 8.");
+                System.out.println("Invalid choice. Enter a number from 1 to 9.");
                 continue;
             }
 
@@ -96,6 +98,7 @@ public class MiniBank {
                     case LIST_ACCOUNTS -> listAccounts(accounts);
                     case STATEMENT -> printStatement(input, accounts);
                     case CONCURRENCY_DEMO -> runConcurrencyDemo();
+                    case TRANSACTION_PROCESSING_DEMO -> runTransactionProcessingDemo();
                     case EXIT -> {
                         running = false;
                         System.out.println("Thank you for banking with MiniBank. Goodbye!");
@@ -122,7 +125,7 @@ public class MiniBank {
         final long depositAmount = 1;
         long expectedBalance = (long) workerCount * depositsPerWorker * depositAmount;
 
-        System.out.println("\nPractical 9: Thread Safety Demo");
+        System.out.println("\nThread Safety Demo");
         System.out.println("Workers: " + workerCount + ", deposits per worker: "
                 + depositsPerWorker + ", amount: " + depositAmount);
 
@@ -159,6 +162,132 @@ public class MiniBank {
         }
     }
 
+    private static void runTransactionProcessingDemo() {
+        System.out.println("\nTransaction Processing Demo");
+        runProducerConsumerBatch();
+        runDeadlockAndLockOrderingDemo();
+    }
+
+    private static void runProducerConsumerBatch() {
+        final int transactionCount = 10;
+        final long amountPerTransaction = 100;
+        Account batchAccount = new SavingsAccount("Batch Demo", 0, 0);
+        TransactionBuffer buffer = new TransactionBuffer(3);
+        TransactionProcessor processor = new TransactionProcessor();
+
+        Thread producer = new Thread(() -> {
+            try {
+                for (int i = 1; i <= transactionCount; i++) {
+                    buffer.put(new AccountWorker(batchAccount, 1, amountPerTransaction));
+                    System.out.println("Producer queued transaction " + i);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "transaction-producer");
+
+        Thread consumer = new Thread(() -> {
+            try {
+                for (int i = 1; i <= transactionCount; i++) {
+                    processor.submit(buffer.take());
+                    System.out.println("Consumer submitted transaction " + i);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "transaction-consumer");
+
+        try {
+            producer.start();
+            consumer.start();
+            producer.join();
+            consumer.join();
+            processor.stop();
+            System.out.println("Batch completed. Final balance: "
+                    + batchAccount.getBalance() + " (expected "
+                    + transactionCount * amountPerTransaction + ")");
+        } catch (InterruptedException e) {
+            processor.stopNow();
+            Thread.currentThread().interrupt();
+            System.out.println("Transaction batch interrupted.");
+        }
+    }
+
+    private static void runDeadlockAndLockOrderingDemo() {
+        Account unsafeA = new CurrentAccount("Unsafe A", 1000, 5000);
+        Account unsafeB = new CurrentAccount("Unsafe B", 1000, 5000);
+        CountDownLatch bothThreadsHoldFirstLock = new CountDownLatch(2);
+
+        Thread unsafeTransferOne = new Thread(
+                () -> transferWithOppositeLockOrder(unsafeA, unsafeB, bothThreadsHoldFirstLock),
+                "unsafe-A-to-B");
+        Thread unsafeTransferTwo = new Thread(
+                () -> transferWithOppositeLockOrder(unsafeB, unsafeA, bothThreadsHoldFirstLock),
+                "unsafe-B-to-A");
+        unsafeTransferOne.setDaemon(true);
+        unsafeTransferTwo.setDaemon(true);
+        unsafeTransferOne.start();
+        unsafeTransferTwo.start();
+
+        try {
+            unsafeTransferOne.join(500);
+            unsafeTransferTwo.join(500);
+            System.out.println("Opposite lock order deadlocked: "
+                    + (unsafeTransferOne.isAlive() && unsafeTransferTwo.isAlive()));
+
+            Account safeA = new CurrentAccount("Safe A", 1000, 5000);
+            Account safeB = new CurrentAccount("Safe B", 1000, 5000);
+            Thread safeTransferOne = new Thread(
+                    () -> transferWithOrderedLocks(safeA, safeB, 500), "safe-A-to-B");
+            Thread safeTransferTwo = new Thread(
+                    () -> transferWithOrderedLocks(safeB, safeA, 500), "safe-B-to-A");
+            safeTransferOne.start();
+            safeTransferTwo.start();
+            safeTransferOne.join();
+            safeTransferTwo.join();
+            System.out.println("Ordered-lock transfers completed. Final balances: "
+                    + safeA.getBalance() + " and " + safeB.getBalance());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.out.println("Deadlock demonstration interrupted.");
+        }
+    }
+
+    private static void transferWithOppositeLockOrder(Account from, Account to,
+                                                      CountDownLatch ready) {
+        synchronized (from) {
+            ready.countDown();
+            try {
+                ready.await();
+                synchronized (to) {
+                    from.transfer(to, 100);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (BankException e) {
+                System.out.println(Thread.currentThread().getName()
+                        + " failed: " + e.getMessage());
+            }
+        }
+    }
+
+    private static void transferWithOrderedLocks(Account from, Account to, long amount) {
+        Account first = from.getAccountNumber().compareTo(to.getAccountNumber()) < 0
+                ? from : to;
+        Account second = first == from ? to : from;
+        synchronized (first) {
+            synchronized (second) {
+                try {
+                    from.transfer(to, amount);
+                    System.out.println(Thread.currentThread().getName() + " completed.");
+                } catch (BankException e) {
+                    System.out.println(Thread.currentThread().getName()
+                            + " failed: " + e.getMessage());
+                }
+            }
+        }
+    }
+
     private static void printMenu() {
         System.out.println("Main Menu");
         System.out.println("---------");
@@ -169,7 +298,8 @@ public class MiniBank {
         System.out.println("5. List accounts");
         System.out.println("6. View statement");
         System.out.println("7. Run concurrency demo");
-        System.out.println("8. Exit");
+        System.out.println("8. Process transactions");
+        System.out.println("9. Exit");
     }
 
     private static void openAccount(Scanner input, List<Account> accounts,
