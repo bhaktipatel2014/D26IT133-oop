@@ -17,7 +17,7 @@ public class CurrentAccount extends Account implements Premium {
     }
 
     @Override
-    public boolean canWithdraw(long amount) {
+    public synchronized boolean canWithdraw(long amount) {
         return amount >= 0 && balance - amount >= -overdraftLimit;
     }
 }

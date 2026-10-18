@@ -17,7 +17,7 @@ public class SavingsAccount extends Account {
     }
 
     @Override
-    public boolean canWithdraw(long amount) {
+    public synchronized boolean canWithdraw(long amount) {
         return amount >= 0 && balance - amount >= minBalance;
     }
 }

@@ -1,6 +1,8 @@
 
 package model;
 
+import exception.InvalidAmountException;
+
 public class FixedDepositAccount extends Account {
 
     public FixedDepositAccount(String ownerName, double balance) {
@@ -15,5 +17,13 @@ public class FixedDepositAccount extends Account {
     @Override
     public boolean canWithdraw(long amount) {
         return false;
+    }
+
+    @Override
+    public boolean withdraw(long amount) throws InvalidAmountException {
+        if (amount <= 0) {
+            throw new InvalidAmountException("Withdrawal amount must be greater than zero.");
+        }
+        throw new InvalidAmountException("Fixed deposit is locked; withdrawals are not allowed.");
     }
 }
