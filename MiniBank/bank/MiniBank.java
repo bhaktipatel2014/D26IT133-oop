@@ -1,6 +1,7 @@
 package bank;
 
 public class Customer implements Cloneable {
+
     private String name;
     private Address address;
 
@@ -17,8 +18,8 @@ public class Customer implements Cloneable {
         return address;
     }
 
-    // Static nested class for Address
     public static class Address implements Cloneable {
+
         private String line;
         private String city;
         private String pincode;
@@ -46,7 +47,7 @@ public class Customer implements Cloneable {
             try {
                 return (Address) super.clone();
             } catch (CloneNotSupportedException e) {
-                return new Address(this.line, this.city, this.pincode);
+                throw new AssertionError(e);
             }
         }
     }
@@ -55,13 +56,14 @@ public class Customer implements Cloneable {
     public Customer clone() {
         try {
             Customer cloned = (Customer) super.clone();
-            // Perform deep clone for mutable reference objects
-            if (this.address != null) {
-                cloned.address = this.address.clone();
+
+            if (address != null) {
+                cloned.address = address.clone();
             }
+
             return cloned;
         } catch (CloneNotSupportedException e) {
-            return new Customer(this.name, this.address != null ? this.address.clone() : null);
+            throw new AssertionError(e);
         }
     }
 }
