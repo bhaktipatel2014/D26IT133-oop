@@ -1,26 +1,27 @@
+
 package bank;
 
-public class Account {
+public abstract class Account {
 
-    private static int nextAccountNumber = 1001;
+    private static int nextAccountNumber = 1;
 
-    private int accountNumber;
+    private final String accountNumber;
     private String ownerName;
-    private double balance;
+    protected double balance;
 
     public Account(String ownerName) {
-        this.accountNumber = nextAccountNumber++;
+        this.accountNumber = String.format("AC%04d", nextAccountNumber++);
         this.ownerName = ownerName;
         this.balance = 0;
     }
 
     public Account(String ownerName, double balance) {
-        this.accountNumber = nextAccountNumber++;
+        this.accountNumber = String.format("AC%04d", nextAccountNumber++);
         this.ownerName = ownerName;
         this.balance = balance;
     }
 
-    public int getAccountNumber() {
+    public String getAccountNumber() {
         return accountNumber;
     }
 
@@ -32,23 +33,40 @@ public class Account {
         return balance;
     }
 
+    public boolean deposit(long amount) {
+        if (amount <= 0) {
+            return false;
+        }
+        balance += amount;
+        return true;
+    }
+
+    public boolean withdraw(long amount) {
+        if (amount <= 0 || !canWithdraw(amount)) {
+            return false;
+        }
+        balance -= amount;
+        return true;
+    }
+
+    public abstract double interestRate();
+
+    public abstract boolean canWithdraw(long amount);
+
     @Override
     public String toString() {
-        return "Account Number: " + accountNumber
-                + ", Owner Name: " + ownerName
-                + ", Balance: " + balance;
+        return accountNumber + " | " + ownerName + " | " + balance;
     }
 
     @Override
     public boolean equals(Object o) {
-
         if (this == o) {
             return true;
         }
 
         if (o instanceof Account) {
             Account other = (Account) o;
-            return this.accountNumber == other.accountNumber;
+            return this.accountNumber.equals(other.accountNumber);
         }
 
         return false;
@@ -56,7 +74,7 @@ public class Account {
 
     @Override
     public int hashCode() {
-        return Integer.hashCode(accountNumber);
+        return accountNumber.hashCode();
     }
 }
 
