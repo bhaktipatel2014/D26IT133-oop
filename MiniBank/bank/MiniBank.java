@@ -1,69 +1,53 @@
 package bank;
 
-public class Customer implements Cloneable {
+public class MiniBank {
 
-    private String name;
-    private Address address;
+    public static void main(String[] args) {
 
-    public Customer(String name, Address address) {
-        this.name = name;
-        this.address = address;
-    }
+        System.out.println("Validator Tests:");
 
-    public String getName() {
-        return name;
-    }
+        System.out.println("Mobile valid: "
+                + Validator.isValidMobile("9876543210"));
 
-    public Address getAddress() {
-        return address;
-    }
+        System.out.println("Mobile invalid: "
+                + Validator.isValidMobile("1234567890"));
 
-    public static class Address implements Cloneable {
+        System.out.println("Email valid: "
+                + Validator.isValidEmail("dhruva@gmail.com"));
 
-        private String line;
-        private String city;
-        private String pincode;
+        System.out.println("Email invalid: "
+                + Validator.isValidEmail("dhruva@gmail"));
 
-        public Address(String line, String city, String pincode) {
-            this.line = line;
-            this.city = city;
-            this.pincode = pincode;
-        }
+        System.out.println("PAN valid: "
+                + Validator.isValidPan("ABCDE1234F"));
 
-        public String getLine() {
-            return line;
-        }
+        System.out.println("PAN invalid: "
+                + Validator.isValidPan("ABC123"));
 
-        public String getCity() {
-            return city;
-        }
+        System.out.println("IFSC valid: "
+                + Validator.isValidIfsc("SBIN0001234"));
 
-        public String getPincode() {
-            return pincode;
-        }
+        System.out.println("IFSC invalid: "
+                + Validator.isValidIfsc("SBI123"));
 
-        @Override
-        public Address clone() {
-            try {
-                return (Address) super.clone();
-            } catch (CloneNotSupportedException e) {
-                throw new AssertionError(e);
-            }
-        }
-    }
+        System.out.println();
 
-    @Override
-    public Customer clone() {
-        try {
-            Customer cloned = (Customer) super.clone();
+        System.out.println("Command Parser:");
 
-            if (address != null) {
-                cloned.address = address.clone();
-            }
+        Command command =
+                CommandParser.parse("DEPOSIT AC0001 500");
 
-            return cloned;
-        } catch (CloneNotSupportedException e) {
-            throw new AssertionError(e);
-        }
+        System.out.println("Type: " + command.type());
+        System.out.println("Account Number: "
+                + command.accountNumber());
+        System.out.println("Amount: " + command.amount());
+
+        System.out.println();
+
+        Account account =
+                new Account("Dhruva", 5000);
+
+        System.out.println(
+                StatementFormatter.buildStatement(account));
     }
 }
