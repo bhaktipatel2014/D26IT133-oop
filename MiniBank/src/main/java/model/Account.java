@@ -7,8 +7,14 @@ import exception.InvalidAmountException;
 import model.annotation.Id;
 import model.annotation.MaxLength;
 import model.annotation.Positive;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.Serializable;
 
-public abstract class Account implements Transactable, InterestBearing {
+public abstract class Account implements Transactable, InterestBearing,
+        Serializable, Comparable<Account> {
+
+    private static final long serialVersionUID = 1L;
 
     private static int nextAccountNumber = 1;
 
@@ -33,6 +39,21 @@ public abstract class Account implements Transactable, InterestBearing {
 
     public String getAccountNumber() {
         return accountNumber;
+    }
+
+    @Override
+    public int compareTo(Account other) {
+        return accountNumber.compareTo(other.accountNumber);
+    }
+
+    private void readObject(ObjectInputStream input) throws IOException, ClassNotFoundException {
+        input.defaultReadObject();
+        String digits = accountNumber.replaceFirst("^AC", "");
+        try {
+            nextAccountNumber = Math.max(nextAccountNumber, Integer.parseInt(digits) + 1);
+        } catch (NumberFormatException ignored) {
+            // Keep the current sequence if an older/corrupt account number is encountered.
+        }
     }
 
     public String getOwnerName() {
@@ -75,15 +96,25 @@ public abstract class Account implements Transactable, InterestBearing {
     }
 
     public void transfer(Account to, long amount) throws BankException {
+        if (to == null) {
+            throw new AccountNotFoundException("destination");
+        }
+        if (equals(to)) {
+            throw new InvalidAmountException("Source and destination must be different accounts.");
+        }
+        Account first = compareTo(to) < 0 ? this : to;
+        Account second = first == this ? to : this;
+        synchronized (first) {
+            synchronized (second) {
+                transferWhileLocked(to, amount);
+            }
+        }
+    }
+
+    private void transferWhileLocked(Account to, long amount) throws BankException {
         boolean withdrawn = false;
         boolean completed = false;
         try {
-            if (to == null) {
-                throw new AccountNotFoundException("destination");
-            }
-            if (equals(to)) {
-                throw new InvalidAmountException("Source and destination must be different accounts.");
-            }
             withdraw(amount);
             withdrawn = true;
             to.deposit(amount);
