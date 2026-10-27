@@ -3,6 +3,9 @@ package service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import exception.AccountNotFoundException;
 import exception.BankException;
@@ -14,8 +17,13 @@ import model.FixedDepositAccount;
 import model.Premium;
 import model.SavingsAccount;
 import model.UnsafeAccountWorker;
+import service.AccountStore;
 import util.AnnotationValidator;
 import util.StatementFormatter;
+import service.Repository;
+import service.BankService;
+import service.StatePersister;
+import service.ReportGenerator;
 import static util.Validator.isValidEmail;
 import static util.Validator.isValidMobile;
 
@@ -29,14 +37,37 @@ public class MiniBank {
     }
 
     private enum MenuOption {
-        OPEN_ACCOUNT, DEPOSIT, WITHDRAW, TRANSFER, LIST_ACCOUNTS, STATEMENT, CONCURRENCY_DEMO, TRANSACTION_PROCESSING_DEMO, EXIT
+        OPEN_ACCOUNT, DEPOSIT, WITHDRAW, TRANSFER, LIST_ACCOUNTS, STATEMENT,
+        CONCURRENCY_DEMO, TRANSACTION_PROCESSING_DEMO, REPORT, EXIT
     }
 
     public static void main(String[] args) {
-        List<Account> accounts = new ArrayList<>(List.of(
-                new SavingsAccount("Dhruva", 5000, 1000),
-                new CurrentAccount("Bhakti", 2000, 5000),
-                new FixedDepositAccount("Aarya", 10000)));
+        Path dataDirectory = Path.of("data");
+        Path accountsFile = dataDirectory.resolve("accounts.dat");
+        Path logsDirectory = dataDirectory.resolve("logs");
+        Repository<Account> repository = new Repository<>();
+        AccountStore accountStore = new AccountStore();
+        BankService bankService = new BankService(repository,
+                logsDirectory.resolve("transactions.log"), accountStore);
+        List<Account> accounts = new ArrayList<>();
+        if (Files.exists(accountsFile)) {
+            try {
+                for (Account account : StatePersister.load(accountsFile)) {
+                    accounts.add(account);
+                    bankService.register(account);
+                }
+            } catch (IOException | ClassNotFoundException e) {
+                System.out.println("Saved accounts could not be loaded: " + e.getMessage());
+            }
+        }
+        if (accounts.isEmpty()) {
+            accounts.addAll(List.of(new SavingsAccount("Dhruva", 5000, 1000),
+                    new CurrentAccount("Bhakti", 2000, 5000),
+                    new FixedDepositAccount("Aarya", 10000)));
+            for (Account account : accounts) {
+                bankService.register(account);
+            }
+        }
         List<Customer> customers = new ArrayList<>();
         BankInfo bank = new BankInfo("MiniBank", "Charusat Branch");
 
@@ -61,12 +92,14 @@ public class MiniBank {
         System.out.println("================================\n");
 
         try (BankSession session = new BankSession()) {
-            runMenu(session.scanner(), accounts, customers);
+            runMenu(session.scanner(), accounts, customers, bankService, accountStore,
+                    accountsFile, logsDirectory);
         }
     }
 
     private static void runMenu(Scanner input, List<Account> accounts,
-                                List<Customer> customers) {
+                                List<Customer> customers, BankService bankService,
+                                AccountStore accountStore, Path accountsFile, Path logsDirectory) {
         boolean running = true;
         while (running) {
             printMenu();
@@ -80,27 +113,31 @@ public class MiniBank {
                 case 6 -> MenuOption.STATEMENT;
                 case 7 -> MenuOption.CONCURRENCY_DEMO;
                 case 8 -> MenuOption.TRANSACTION_PROCESSING_DEMO;
-                case 9 -> MenuOption.EXIT;
+                case 9 -> MenuOption.REPORT;
+                case 10 -> MenuOption.EXIT;
                 default -> null;
             };
 
             if (option == null) {
-                System.out.println("Invalid choice. Enter a number from 1 to 9.");
+                System.out.println("Invalid choice. Enter a number from 1 to 10.");
                 continue;
             }
 
             try {
                 switch (option) {
-                    case OPEN_ACCOUNT -> openAccount(input, accounts, customers);
-                    case DEPOSIT -> deposit(input, accounts);
-                    case WITHDRAW -> withdraw(input, accounts);
-                    case TRANSFER -> transfer(input, accounts);
-                    case LIST_ACCOUNTS -> listAccounts(accounts);
-                    case STATEMENT -> printStatement(input, accounts);
+                    case OPEN_ACCOUNT -> openAccount(input, accounts, customers, bankService, accountStore);
+                    case DEPOSIT -> deposit(input, accounts, bankService);
+                    case WITHDRAW -> withdraw(input, accounts, bankService);
+                    case TRANSFER -> transfer(input, accounts, bankService);
+                    case LIST_ACCOUNTS -> listAccounts(bankService);
+                    case STATEMENT -> printStatement(input, accounts, bankService);
                     case CONCURRENCY_DEMO -> runConcurrencyDemo();
                     case TRANSACTION_PROCESSING_DEMO -> runTransactionProcessingDemo();
+                    case REPORT -> System.out.print(ReportGenerator.generate(logsDirectory,
+                            logsDirectory.resolve("end-of-day-report.txt")));
                     case EXIT -> {
                         running = false;
+                        StatePersister.save(accounts.toArray(Account[]::new), accountsFile);
                         System.out.println("Thank you for banking with MiniBank. Goodbye!");
                     }
                 }
@@ -108,6 +145,8 @@ public class MiniBank {
                 System.out.println("Transaction failed: short by " + e.getShortfall() + " rupees.");
             } catch (AccountNotFoundException e) {
                 System.out.println(e.getMessage());
+            } catch (IOException e) {
+                System.out.println("Saved state or report could not be written: " + e.getMessage());
             } catch (BankException e) {
                 System.out.println("Transaction failed: " + e.getMessage());
             } finally {
@@ -189,7 +228,8 @@ public class MiniBank {
         Thread consumer = new Thread(() -> {
             try {
                 for (int i = 1; i <= transactionCount; i++) {
-                    processor.submit(buffer.take());
+                    Runnable transaction = buffer.take();
+                    processor.submit(batchAccount, transaction);
                     System.out.println("Consumer submitted transaction " + i);
                 }
             } catch (InterruptedException e) {
@@ -299,11 +339,13 @@ public class MiniBank {
         System.out.println("6. View statement");
         System.out.println("7. Run concurrency demo");
         System.out.println("8. Process transactions");
-        System.out.println("9. Exit");
+        System.out.println("9. End-of-day report");
+        System.out.println("10. Exit");
     }
 
     private static void openAccount(Scanner input, List<Account> accounts,
-                                    List<Customer> customers) {
+                                    List<Customer> customers, BankService bankService,
+                                    AccountStore accountStore) throws BankException {
         System.out.println("Account type: 1. Savings  2. Current  3. Fixed Deposit");
         int type = readInt(input, "Choose account type: ");
         if (type < 1 || type > 3) {
@@ -313,33 +355,12 @@ public class MiniBank {
 
         System.out.print("Owner name: ");
         String owner = input.nextLine().trim();
-        if (owner.isEmpty()) {
-            System.out.println("Owner name cannot be empty.");
-            return;
-        }
         System.out.print("Email address: ");
         String email = input.nextLine().trim();
-        if (!isValidEmail(email)) {
-            System.out.println("Invalid email address.");
-            return;
-        }
         System.out.print("Mobile number: ");
         String mobile = input.nextLine().trim();
-        if (!isValidMobile(mobile)) {
-            System.out.println("Invalid mobile number. Use a 10-digit number starting with 6-9.");
-            return;
-        }
         long openingBalance = readLong(input, "Opening balance (rupees): ");
-        if (openingBalance < 0) {
-            System.out.println("Opening balance cannot be negative.");
-            return;
-        }
-
-        Account account = switch (type) {
-            case 1 -> new SavingsAccount(owner, openingBalance, 1000);
-            case 2 -> new CurrentAccount(owner, openingBalance, 5000);
-            default -> new FixedDepositAccount(owner, openingBalance);
-        };
+        Account account = bankService.openAccount(owner, email, mobile, type, openingBalance);
         Customer customer = new Customer(owner, email, mobile);
         customers.add(customer);
         accounts.add(account);
@@ -348,15 +369,15 @@ public class MiniBank {
         System.out.printf("Interest rate: %.1f%% per year%n", account.interestRate());
     }
 
-    private static void deposit(Scanner input, List<Account> accounts)
+    private static void deposit(Scanner input, List<Account> accounts, BankService bankService)
             throws BankException {
         Account account = findAccount(input, accounts, "Account number: ");
         long amount = readLong(input, "Deposit amount: ");
-        account.deposit(amount);
+        bankService.deposit(account.getAccountNumber(), amount);
         System.out.println("Deposit successful. New balance: " + account.getBalance());
     }
 
-    private static void withdraw(Scanner input, List<Account> accounts)
+    private static void withdraw(Scanner input, List<Account> accounts, BankService bankService)
             throws BankException {
         Account account = findAccount(input, accounts, "Account number: ");
         long amount = readLong(input, "Withdrawal amount: ");
@@ -375,25 +396,25 @@ public class MiniBank {
         System.out.println("Lambda WithdrawRule allows: " + lambdaAllowed);
 
         if (anonymousAllowed && lambdaAllowed) {
-            account.withdraw(amount);
+            bankService.withdraw(account.getAccountNumber(), amount);
             System.out.println("Withdrawal successful. New balance: " + account.getBalance());
         } else {
-            account.withdraw(amount); // Throws a checked exception with the reason.
+            bankService.withdraw(account.getAccountNumber(), amount); // Throws a checked exception with the reason.
         }
     }
 
-    private static void transfer(Scanner input, List<Account> accounts)
+    private static void transfer(Scanner input, List<Account> accounts, BankService bankService)
             throws BankException {
         Account from = findAccount(input, accounts, "From account number: ");
         Account to = findAccount(input, accounts, "To account number: ");
         long amount = readLong(input, "Transfer amount: ");
-        from.transfer(to, amount);
+        bankService.transfer(from.getAccountNumber(), to.getAccountNumber(), amount);
         System.out.println("Transfer successful.");
     }
 
-    private static void listAccounts(List<Account> accounts) {
+    private static void listAccounts(BankService bankService) {
         System.out.println("\nAccount list:");
-        for (Account account : accounts.toArray(Account[]::new)) {
+        for (Account account : bankService.listAccounts()) {
             System.out.printf("%s | interest %.1f%% per year | estimated yearly interest: %.2f%n",
                     account, account.interestRate(), account.yearlyInterest());
             if (account instanceof Premium) {
@@ -405,10 +426,10 @@ public class MiniBank {
         }
     }
 
-    private static void printStatement(Scanner input, List<Account> accounts)
+    private static void printStatement(Scanner input, List<Account> accounts, BankService bankService)
             throws AccountNotFoundException {
         Account account = findAccount(input, accounts, "Account number: ");
-        System.out.print(StatementFormatter.buildStatement(account));
+        System.out.print(bankService.statement(account.getAccountNumber()));
         System.out.printf("Yearly interest estimate: %.2f%n", account.yearlyInterest());
     }
 

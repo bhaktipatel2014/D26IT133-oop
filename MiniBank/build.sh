@@ -12,7 +12,7 @@ find "$CLASSES_DIR" -type f -name '*.class' -delete
 find "$SOURCE_DIR" -type f -name '*.java' -print0 \
   | xargs -0 javac --release 17 -d "$CLASSES_DIR"
 
-jar --create --file "$JAR_FILE" --main-class service.MiniBank \
+jar -J-Djava.io.tmpdir="$BUILD_DIR" --create --file "$JAR_FILE" --main-class service.MiniBank \
   -C "$CLASSES_DIR" .
 
 echo "Built $JAR_FILE"
