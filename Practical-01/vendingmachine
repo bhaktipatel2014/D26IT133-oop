@@ -1,0 +1,30 @@
+import java.util.Scanner;
+enum coin{
+    ONE,
+    TWO,
+    FIVE,
+    TEN
+}
+
+public class vendingmachine{
+    public static void main(String[] args){
+        Scanner sc = new Scanner(System.in);
+        int snackprice = 15;
+        int total = 0;
+        while (total < snackprice){
+            System.out.print("Enter coin (ONE,TWO,FIVE,TEN):");
+            String input = sc.next().toUpperCase();
+            coin Coin = coin.valueOf(input);
+            int value = switch(Coin){
+                case ONE -> 1;
+                case TWO-> 2;
+                case FIVE-> 5;
+                case TEN-> 10;
+            };
+            total += value;
+            System.out.println("Total paid: "+ total);
+        }
+        System.out.println("paid change: "+ (total - snackprice));
+        sc.close();
+    }
+}
