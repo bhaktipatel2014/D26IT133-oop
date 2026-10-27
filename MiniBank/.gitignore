@@ -1,0 +1,6 @@
+build/
+out/
+out-pr6/
+*.class
+data/
+minibank-pr6.jar
